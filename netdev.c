@@ -77,12 +77,7 @@ int ifacesim_netdev_init(void) {
 
     printk(KERN_INFO "%s: registered network device\n", ifacesim_driver_name);
 
-    // TODO
     struct ifacesim_netdev_priv *priv = netdev_priv(net_dev);
-    priv->stats.rx_packets = 111;
-    priv->stats.tx_packets = 222;
-    priv->stats.rx_errors = 11;
-    priv->stats.tx_errors = 22;
     return 0;
 }
 

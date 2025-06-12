@@ -6,6 +6,7 @@
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Ratmir Gusiakov");
+// TODO: Change this description
 MODULE_DESCRIPTION("A Linux kernel module for simulating error/dropped packets and stuff");
 
 static int __init ifacesim_init(void) {
