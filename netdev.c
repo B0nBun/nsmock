@@ -76,8 +76,6 @@ int ifacesim_netdev_init(void) {
     }
 
     printk(KERN_INFO "%s: registered network device\n", ifacesim_driver_name);
-
-    struct ifacesim_netdev_priv *priv = netdev_priv(net_dev);
     return 0;
 }
 
