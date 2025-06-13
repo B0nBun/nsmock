@@ -19,6 +19,37 @@ struct ifacesim_stat {
     struct attribute attr;
 };
 
+struct ifacesim_stat_op {
+    enum {
+        STAT_OP_INC,
+        STAT_OP_DEC,
+        STAT_OP_SET,
+    } type;
+    unsigned long val;
+};
+
+static int ifacesim_parse_stat_op(const char* s, struct ifacesim_stat_op* op) {
+    if (s == NULL || op == NULL) {
+        return -EINVAL;
+    }
+    if (*s == '+') {
+        s++;
+        op->type = STAT_OP_INC;
+    } else if (*s == '-') {
+        s++;
+        op->type = STAT_OP_DEC;
+    } else {
+        op->type = STAT_OP_SET;
+    }
+    unsigned long val = 0;
+    int res = kstrtoul(s, 10, &val);
+    if (res != 0) {
+        return res;
+    }
+    op->val = val;
+    return 0;
+}
+
 #define STAT(member) { .name = #member, .stat_offset = offsetof(struct net_device_stats, member) }
 
 static struct ifacesim_stat ifacesim_stats[] = {
@@ -51,21 +82,16 @@ static struct ifacesim_stat ifacesim_stats[] = {
 
 #define IFACESIM_STATS_LEN (sizeof(ifacesim_stats) / sizeof(ifacesim_stats[0]))
 
-static int is_attr_name(struct attribute *attr, char *name) {
-    size_t len = strlen(name);
-    return !strncmp(attr->name, name, len);
-}
-
 static ssize_t ifacesim_sysfs_show(struct kobject *kobj, struct attribute *attr, char *buf) {
     struct net_device_stats* stats = ifacesim_netdev_get_stats();
     if (stats == NULL) {
         return 0;
     }
     for (size_t i = 0; i < IFACESIM_STATS_LEN; i ++) {
-        if (is_attr_name(attr, ifacesim_stats[i].name)) {
+        if (sysfs_streq(attr->name, ifacesim_stats[i].name)) {
             size_t offset = ifacesim_stats[i].stat_offset;
             unsigned long* stat = (void*)((uintptr_t)stats + offset);
-            return sysfs_emit(buf, "%ld\n", *stat);
+            return sysfs_emit(buf, "%lu\n", *stat);
         }
     }
     return 0;
@@ -77,14 +103,29 @@ static ssize_t ifacesim_sysfs_store(struct kobject *kobj, struct attribute *attr
         return count;
     }
     for (size_t i = 0; i < IFACESIM_STATS_LEN; i ++) {
-        if (is_attr_name(attr, ifacesim_stats[i].name)) {
+        if (sysfs_streq(attr->name, ifacesim_stats[i].name)) {
             size_t offset = ifacesim_stats[i].stat_offset;
-            unsigned long* stat = (void*)((uintptr_t)stats + offset);
-            int res = kstrtoul(buf, 10, stat);
+            struct ifacesim_stat_op operation;
+            int res = ifacesim_parse_stat_op(buf, &operation);
             if (res < 0) {
                 printk(KERN_ERR "%s: failed to parse size_t from string '%.*s'", ifacesim_driver_name, (int)count, buf);
                 return (ssize_t)res;
             }
+            
+            unsigned long* stat = (void*)((uintptr_t)stats + offset);
+            unsigned long tmp = 0;
+            if (operation.type == STAT_OP_INC) {
+                if (check_add_overflow(*stat, operation.val, &tmp)) {
+                    return -ERANGE;
+                }
+            } else if (operation.type == STAT_OP_DEC) {
+                if (check_sub_overflow(*stat, operation.val, &tmp)) {
+                    return -ERANGE;
+                }
+            } else if (operation.type == STAT_OP_SET) {
+                tmp = operation.val;
+            }
+            *stat = tmp;
             return count;
         }
     }
