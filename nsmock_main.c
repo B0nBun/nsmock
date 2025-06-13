@@ -9,22 +9,22 @@ MODULE_AUTHOR("Ratmir Gusiakov");
 // TODO: Change this description
 MODULE_DESCRIPTION("A Linux kernel module for simulating error/dropped packets and stuff");
 
-static int __init ifacesim_init(void) {
-    int ret = ifacesim_netdev_init();
+static int __init nsmock_init(void) {
+    int ret = nsmock_netdev_init();
     if (ret != 0) {
         return ret;
     }
-    ret = ifacesim_sysfs_init();
+    ret = nsmock_sysfs_init();
     if (ret != 0) {
         return ret;
     }
     return 0;
 }
 
-static void __exit ifacesim_exit(void) {
-    ifacesim_netdev_exit();
-    ifacesim_sysfs_exit();
+static void __exit nsmock_exit(void) {
+    nsmock_netdev_exit();
+    nsmock_sysfs_exit();
 }
 
-module_init(ifacesim_init);
-module_exit(ifacesim_exit);
+module_init(nsmock_init);
+module_exit(nsmock_exit);

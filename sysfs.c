@@ -6,53 +6,21 @@
 
 // TODO: Place some debug/info logs
 // TODO: Place some BUG_ON, WARN_ON macros
-// TODO: Rename 'ifacesim' to 'nsmock' or something
-// TODO: Move the sysfs from /sys/kernel to /sys/net or something even more appropriate
+// TODO: Write some basic integration tests
 
-static char* ifacesim_driver_name = "ifacesim_netdev";
+#define NSMOCK_MODULE "nsmock: "
 
-struct kobject ifacesim_kobj;
+struct kobject nsmock_kobj;
 
-struct ifacesim_stat {
+struct nsmock_stat {
     char* name;
     size_t stat_offset;
     struct attribute attr;
 };
 
-struct ifacesim_stat_op {
-    enum {
-        STAT_OP_INC,
-        STAT_OP_DEC,
-        STAT_OP_SET,
-    } type;
-    unsigned long val;
-};
-
-static int ifacesim_parse_stat_op(const char* s, struct ifacesim_stat_op* op) {
-    if (s == NULL || op == NULL) {
-        return -EINVAL;
-    }
-    if (*s == '+') {
-        s++;
-        op->type = STAT_OP_INC;
-    } else if (*s == '-') {
-        s++;
-        op->type = STAT_OP_DEC;
-    } else {
-        op->type = STAT_OP_SET;
-    }
-    unsigned long val = 0;
-    int res = kstrtoul(s, 10, &val);
-    if (res != 0) {
-        return res;
-    }
-    op->val = val;
-    return 0;
-}
-
 #define STAT(member) { .name = #member, .stat_offset = offsetof(struct net_device_stats, member) }
 
-static struct ifacesim_stat ifacesim_stats[] = {
+static struct nsmock_stat nsmock_stats[] = {
     STAT(rx_packets),
 	STAT(tx_packets),
 	STAT(rx_bytes),
@@ -80,16 +48,79 @@ static struct ifacesim_stat ifacesim_stats[] = {
 
 #undef STAT
 
-#define IFACESIM_STATS_LEN (sizeof(ifacesim_stats) / sizeof(ifacesim_stats[0]))
+#define nsmock_STATS_LEN (sizeof(nsmock_stats) / sizeof(nsmock_stats[0]))
 
-static ssize_t ifacesim_sysfs_show(struct kobject *kobj, struct attribute *attr, char *buf) {
-    struct net_device_stats* stats = ifacesim_netdev_get_stats();
+struct nsmock_stat_op {
+    enum {
+        STAT_OP_INC,
+        STAT_OP_DEC,
+        STAT_OP_SET,
+    } type;
+    unsigned long val;
+};
+
+// Filled out during module init
+static struct attribute *nsmock_attrs[nsmock_STATS_LEN + 1] = {};
+
+static struct attribute_group nsmock_group = {
+    .attrs = nsmock_attrs,
+};
+
+const static struct attribute_group* nsmock_groups[] = {
+    &nsmock_group,
+    NULL,
+};
+
+static ssize_t nsmock_sysfs_show(struct kobject *kobj, struct attribute *attr, char *buf);
+static ssize_t nsmock_sysfs_store(struct kobject *kobj, struct attribute *attr, const char* buf, size_t count);
+
+static struct sysfs_ops nsmock_sysfs_ops = {
+    .show = nsmock_sysfs_show,
+    .store = nsmock_sysfs_store,
+};
+
+static void nsmock_sysfs_release(struct kobject *kobj);
+
+static const struct kobj_type nsmock_ktype = {
+    .sysfs_ops = &nsmock_sysfs_ops,
+    .release = nsmock_sysfs_release,
+    .default_groups = nsmock_groups,
+};
+
+int nsmock_sysfs_init(void) {
+    for (size_t i = 0; i < nsmock_STATS_LEN; i ++) {
+        struct attribute* attr = &nsmock_stats[i].attr;
+        attr->name = nsmock_stats[i].name;
+        attr->mode = 0664;
+        nsmock_attrs[i] = attr;
+    }
+    nsmock_attrs[nsmock_STATS_LEN] = NULL;
+
+    int ret = kobject_init_and_add(&nsmock_kobj, &nsmock_ktype, kernel_kobj, "%s", "nsmock");
+    if (!ret) {
+        printk(KERN_ERR NSMOCK_MODULE "failed to init and add kobject\n");
+        return ret;
+    }
+    return 0;
+}
+
+void nsmock_sysfs_exit(void) {
+    kobject_put(&nsmock_kobj);
+    printk(KERN_INFO NSMOCK_MODULE "exit\n");
+}
+
+static void nsmock_sysfs_release(struct kobject *kobj) {
+    printk(KERN_INFO NSMOCK_MODULE "released kobject\n");
+}
+
+static ssize_t nsmock_sysfs_show(struct kobject *kobj, struct attribute *attr, char *buf) {
+    struct net_device_stats* stats = nsmock_netdev_get_stats();
     if (stats == NULL) {
         return 0;
     }
-    for (size_t i = 0; i < IFACESIM_STATS_LEN; i ++) {
-        if (sysfs_streq(attr->name, ifacesim_stats[i].name)) {
-            size_t offset = ifacesim_stats[i].stat_offset;
+    for (size_t i = 0; i < nsmock_STATS_LEN; i ++) {
+        if (sysfs_streq(attr->name, nsmock_stats[i].name)) {
+            size_t offset = nsmock_stats[i].stat_offset;
             unsigned long* stat = (void*)((uintptr_t)stats + offset);
             return sysfs_emit(buf, "%lu\n", *stat);
         }
@@ -97,18 +128,20 @@ static ssize_t ifacesim_sysfs_show(struct kobject *kobj, struct attribute *attr,
     return 0;
 }
 
-static ssize_t ifacesim_sysfs_store(struct kobject *kobj, struct attribute *attr, const char* buf, size_t count) {
-    struct net_device_stats* stats = ifacesim_netdev_get_stats();
+static int nsmock_parse_stat_op(const char* s, struct nsmock_stat_op* op);
+
+static ssize_t nsmock_sysfs_store(struct kobject *kobj, struct attribute *attr, const char* buf, size_t count) {
+    struct net_device_stats* stats = nsmock_netdev_get_stats();
     if (stats == NULL) {
         return count;
     }
-    for (size_t i = 0; i < IFACESIM_STATS_LEN; i ++) {
-        if (sysfs_streq(attr->name, ifacesim_stats[i].name)) {
-            size_t offset = ifacesim_stats[i].stat_offset;
-            struct ifacesim_stat_op operation;
-            int res = ifacesim_parse_stat_op(buf, &operation);
+    for (size_t i = 0; i < nsmock_STATS_LEN; i ++) {
+        if (sysfs_streq(attr->name, nsmock_stats[i].name)) {
+            size_t offset = nsmock_stats[i].stat_offset;
+            struct nsmock_stat_op operation;
+            int res = nsmock_parse_stat_op(buf, &operation);
             if (res < 0) {
-                printk(KERN_ERR "%s: failed to parse size_t from string '%.*s'", ifacesim_driver_name, (int)count, buf);
+                printk(KERN_ERR NSMOCK_MODULE "failed to parse size_t from string '%.*s'", (int)count, buf);
                 return (ssize_t)res;
             }
             
@@ -132,51 +165,24 @@ static ssize_t ifacesim_sysfs_store(struct kobject *kobj, struct attribute *attr
     return count;
 }
 
-static void ifacesim_sysfs_release(struct kobject *kobj) {
-    printk(KERN_INFO "%s: released kobject\n", ifacesim_driver_name);
-}
-
-// Filled out during module init
-static struct attribute *ifacesim_attrs[IFACESIM_STATS_LEN + 1] = {};
-
-static struct attribute_group ifacesim_group = {
-    .attrs = ifacesim_attrs,
-};
-
-const static struct attribute_group* ifacesim_groups[] = {
-    &ifacesim_group,
-    NULL,
-};
-
-static struct sysfs_ops ifacesim_sysfs_ops = {
-    .show = ifacesim_sysfs_show,
-    .store = ifacesim_sysfs_store,
-};
-
-static const struct kobj_type ifacesim_ktype = {
-    .sysfs_ops = &ifacesim_sysfs_ops,
-    .release = ifacesim_sysfs_release,
-    .default_groups = ifacesim_groups,
-};
-
-int ifacesim_sysfs_init(void) {
-    for (size_t i = 0; i < IFACESIM_STATS_LEN; i ++) {
-        struct attribute* attr = &ifacesim_stats[i].attr;
-        attr->name = ifacesim_stats[i].name;
-        attr->mode = 0664;
-        ifacesim_attrs[i] = attr;
+static int nsmock_parse_stat_op(const char* s, struct nsmock_stat_op* op) {
+    if (s == NULL || op == NULL) {
+        return -EINVAL;
     }
-    ifacesim_attrs[IFACESIM_STATS_LEN] = NULL;
-
-    int ret = kobject_init_and_add(&ifacesim_kobj, &ifacesim_ktype, kernel_kobj, "%s", "ifacesim");
-    if (!ret) {
-        printk(KERN_ERR "%s: failed to init and add kobject\n", ifacesim_driver_name);
-        return ret;
+    if (*s == '+') {
+        s++;
+        op->type = STAT_OP_INC;
+    } else if (*s == '-') {
+        s++;
+        op->type = STAT_OP_DEC;
+    } else {
+        op->type = STAT_OP_SET;
     }
+    unsigned long val = 0;
+    int res = kstrtoul(s, 10, &val);
+    if (res != 0) {
+        return res;
+    }
+    op->val = val;
     return 0;
-}
-
-void ifacesim_sysfs_exit(void) {
-    kobject_put(&ifacesim_kobj);
-    printk(KERN_INFO "%s: exit\n", ifacesim_driver_name);
 }

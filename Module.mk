@@ -1,5 +1,5 @@
-obj-m = ifacesim.o
-ifacesim-y += ifacesim_main.o netdev.o sysfs.o
+obj-m = nsmock.o
+nsmock-y += nsmock_main.o netdev.o sysfs.o
 ccflags-y := -Wall
 
 PWD = $(shell pwd)
