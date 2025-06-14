@@ -17,6 +17,7 @@ static const struct net_device_ops nsmock_netdev_ops = {
 };
 
 int nsmock_netdev_init(void) {
+    printk(KERN_DEBUG NSMOCK_MODULE "netdev init()\n");
     struct net_device *net_dev;
 
     net_dev = alloc_netdev(sizeof(struct nsmock_netdev_priv), NSMOCK_IFACE_NAME "%d", NET_NAME_UNKNOWN, ether_setup);
@@ -38,8 +39,10 @@ int nsmock_netdev_init(void) {
 }
 
 void nsmock_netdev_exit(void) {
+    printk(KERN_DEBUG NSMOCK_MODULE "netdev exit()\n");
     struct net_device* net_dev = get_nsmock_netdev();
     if (net_dev == NULL) {
+        printk(KERN_DEBUG NSMOCK_MODULE "found nsmock net device is NULL\n");
         return;
     }
     unregister_netdev(net_dev);
@@ -79,6 +82,7 @@ static struct net_device* get_nsmock_netdev(void) {
 static struct net_device_stats* nsmock_netdev_get_stats_from(struct net_device *dev) {
     struct nsmock_netdev_priv *priv = netdev_priv(dev);
     if (priv == NULL) {
+        printk(KERN_NOTICE NSMOCK_MODULE "tried to get netdev_priv and received NULL\n");
         return NULL;
     }
     return &priv->stats;

@@ -6,8 +6,7 @@
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Ratmir Gusiakov");
-// TODO: Change this description
-MODULE_DESCRIPTION("A Linux kernel module for simulating error/dropped packets and stuff");
+MODULE_DESCRIPTION("A Linux kernel module for mocking net_device_stats");
 
 static int __init nsmock_init(void) {
     int ret = nsmock_netdev_init();

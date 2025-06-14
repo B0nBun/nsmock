@@ -4,8 +4,6 @@
 #include "sysfs.h"
 #include "netdev.h"
 
-// TODO: Place some debug/info logs
-// TODO: Place some BUG_ON, WARN_ON macros
 // TODO: Write some basic integration tests
 
 #define NSMOCK_MODULE "nsmock: "
@@ -88,6 +86,7 @@ static const struct kobj_type nsmock_ktype = {
 };
 
 int nsmock_sysfs_init(void) {
+    printk(KERN_DEBUG NSMOCK_MODULE "sysfs init()\n");
     for (size_t i = 0; i < nsmock_STATS_LEN; i ++) {
         struct attribute* attr = &nsmock_stats[i].attr;
         attr->name = nsmock_stats[i].name;
@@ -114,13 +113,19 @@ static void nsmock_sysfs_release(struct kobject *kobj) {
 }
 
 static ssize_t nsmock_sysfs_show(struct kobject *kobj, struct attribute *attr, char *buf) {
+    if (attr == NULL) {
+        return 0;
+    }
+    printk(KERN_DEBUG NSMOCK_MODULE "sysfs show('%s')\n", attr->name);
     struct net_device_stats* stats = nsmock_netdev_get_stats();
     if (stats == NULL) {
+        printk(KERN_NOTICE NSMOCK_MODULE "tried to find net device stats, but received NULL\n");
         return 0;
     }
     for (size_t i = 0; i < nsmock_STATS_LEN; i ++) {
         if (sysfs_streq(attr->name, nsmock_stats[i].name)) {
             size_t offset = nsmock_stats[i].stat_offset;
+            printk(KERN_DEBUG NSMOCK_MODULE "found attr with name '%s' and offset %ld, emitting\n", attr->name, offset);
             unsigned long* stat = (void*)((uintptr_t)stats + offset);
             return sysfs_emit(buf, "%lu\n", *stat);
         }
@@ -131,8 +136,13 @@ static ssize_t nsmock_sysfs_show(struct kobject *kobj, struct attribute *attr, c
 static int nsmock_parse_stat_op(const char* s, struct nsmock_stat_op* op);
 
 static ssize_t nsmock_sysfs_store(struct kobject *kobj, struct attribute *attr, const char* buf, size_t count) {
+    if (attr == NULL) {
+        return 0;
+    }
+    printk(KERN_DEBUG NSMOCK_MODULE "sysfs store('%s', '%*pEps')\n", attr->name, (int)count, buf);
     struct net_device_stats* stats = nsmock_netdev_get_stats();
     if (stats == NULL) {
+        printk(KERN_NOTICE NSMOCK_MODULE "tried to find net device stats, but received NULL\n");
         return count;
     }
     for (size_t i = 0; i < nsmock_STATS_LEN; i ++) {
@@ -158,6 +168,7 @@ static ssize_t nsmock_sysfs_store(struct kobject *kobj, struct attribute *attr, 
             } else if (operation.type == STAT_OP_SET) {
                 tmp = operation.val;
             }
+            printk(KERN_DEBUG NSMOCK_MODULE "found attr with name '%s' and offset %ld, storing %lu\n", attr->name, offset, tmp);
             *stat = tmp;
             return count;
         }
