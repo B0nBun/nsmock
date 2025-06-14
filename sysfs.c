@@ -4,9 +4,8 @@
 #include "sysfs.h"
 #include "netdev.h"
 
-// TODO: Write some basic integration tests
-
-#define NSMOCK_MODULE "nsmock: "
+#undef  pr_fmt // Supressing GCC warning
+#define pr_fmt(fmt) "nsmock: " fmt
 
 struct kobject nsmock_kobj;
 
@@ -86,7 +85,7 @@ static const struct kobj_type nsmock_ktype = {
 };
 
 int nsmock_sysfs_init(void) {
-    printk(KERN_DEBUG NSMOCK_MODULE "sysfs init()\n");
+    pr_debug("sysfs init()\n");
     for (size_t i = 0; i < nsmock_STATS_LEN; i ++) {
         struct attribute* attr = &nsmock_stats[i].attr;
         attr->name = nsmock_stats[i].name;
@@ -97,7 +96,7 @@ int nsmock_sysfs_init(void) {
 
     int ret = kobject_init_and_add(&nsmock_kobj, &nsmock_ktype, kernel_kobj, "%s", "nsmock");
     if (!ret) {
-        printk(KERN_ERR NSMOCK_MODULE "failed to init and add kobject\n");
+        pr_err("failed to init and add kobject\n");
         return ret;
     }
     return 0;
@@ -105,27 +104,27 @@ int nsmock_sysfs_init(void) {
 
 void nsmock_sysfs_exit(void) {
     kobject_put(&nsmock_kobj);
-    printk(KERN_INFO NSMOCK_MODULE "exit\n");
+    pr_info("exit\n");
 }
 
 static void nsmock_sysfs_release(struct kobject *kobj) {
-    printk(KERN_INFO NSMOCK_MODULE "released kobject\n");
+    pr_info("released kobject\n");
 }
 
 static ssize_t nsmock_sysfs_show(struct kobject *kobj, struct attribute *attr, char *buf) {
     if (attr == NULL) {
         return 0;
     }
-    printk(KERN_DEBUG NSMOCK_MODULE "sysfs show('%s')\n", attr->name);
+    pr_debug("sysfs show('%s')\n", attr->name);
     struct net_device_stats* stats = nsmock_netdev_get_stats();
     if (stats == NULL) {
-        printk(KERN_NOTICE NSMOCK_MODULE "tried to find net device stats, but received NULL\n");
+        pr_notice("tried to find net device stats, but received NULL\n");
         return 0;
     }
     for (size_t i = 0; i < nsmock_STATS_LEN; i ++) {
         if (sysfs_streq(attr->name, nsmock_stats[i].name)) {
             size_t offset = nsmock_stats[i].stat_offset;
-            printk(KERN_DEBUG NSMOCK_MODULE "found attr with name '%s' and offset %ld, emitting\n", attr->name, offset);
+            pr_debug("found attr with name '%s' and offset %ld, emitting\n", attr->name, offset);
             unsigned long* stat = (void*)((uintptr_t)stats + offset);
             return sysfs_emit(buf, "%lu\n", *stat);
         }
@@ -139,10 +138,10 @@ static ssize_t nsmock_sysfs_store(struct kobject *kobj, struct attribute *attr, 
     if (attr == NULL) {
         return 0;
     }
-    printk(KERN_DEBUG NSMOCK_MODULE "sysfs store('%s', '%*pEps')\n", attr->name, (int)count, buf);
+    pr_debug("sysfs store('%s', '%*pEps')\n", attr->name, (int)count, buf);
     struct net_device_stats* stats = nsmock_netdev_get_stats();
     if (stats == NULL) {
-        printk(KERN_NOTICE NSMOCK_MODULE "tried to find net device stats, but received NULL\n");
+        pr_notice("tried to find net device stats, but received NULL\n");
         return count;
     }
     for (size_t i = 0; i < nsmock_STATS_LEN; i ++) {
@@ -151,7 +150,7 @@ static ssize_t nsmock_sysfs_store(struct kobject *kobj, struct attribute *attr, 
             struct nsmock_stat_op operation;
             int res = nsmock_parse_stat_op(buf, &operation);
             if (res < 0) {
-                printk(KERN_ERR NSMOCK_MODULE "failed to parse size_t from string '%.*s'", (int)count, buf);
+                pr_err("failed to parse size_t from string '%.*s'", (int)count, buf);
                 return (ssize_t)res;
             }
             
@@ -168,7 +167,7 @@ static ssize_t nsmock_sysfs_store(struct kobject *kobj, struct attribute *attr, 
             } else if (operation.type == STAT_OP_SET) {
                 tmp = operation.val;
             }
-            printk(KERN_DEBUG NSMOCK_MODULE "found attr with name '%s' and offset %ld, storing %lu\n", attr->name, offset, tmp);
+            pr_debug("found attr with name '%s' and offset %ld, storing %lu\n", attr->name, offset, tmp);
             *stat = tmp;
             return count;
         }

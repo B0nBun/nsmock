@@ -1,6 +1,6 @@
 obj-m = nsmock.o
 nsmock-y += nsmock_main.o netdev.o sysfs.o
-ccflags-y := -Wall
+ccflags-y := -Wall -Wno-macro-redefined
 
 PWD = $(shell pwd)
 
