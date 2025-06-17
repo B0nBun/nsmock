@@ -28,6 +28,7 @@ int nsmock_netdev_init(void) {
     }
 
     net_dev->netdev_ops = &nsmock_netdev_ops;
+    net_dev->operstate = IF_OPER_UP;
 
     if (register_netdev(net_dev)) {
         pr_err("failed to register net device\n");
